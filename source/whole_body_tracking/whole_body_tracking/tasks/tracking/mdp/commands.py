@@ -27,18 +27,115 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
+MUJOCO_G1_JOINT_NAMES = (
+    "left_hip_pitch_joint",
+    "left_hip_roll_joint",
+    "left_hip_yaw_joint",
+    "left_knee_joint",
+    "left_ankle_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_hip_pitch_joint",
+    "right_hip_roll_joint",
+    "right_hip_yaw_joint",
+    "right_knee_joint",
+    "right_ankle_pitch_joint",
+    "right_ankle_roll_joint",
+    "waist_yaw_joint",
+    "waist_roll_joint",
+    "waist_pitch_joint",
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "left_wrist_yaw_joint",
+    "right_shoulder_pitch_joint",
+    "right_shoulder_roll_joint",
+    "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "right_wrist_roll_joint",
+    "right_wrist_pitch_joint",
+    "right_wrist_yaw_joint",
+)
+
+
+def _normalize_joint_names(values: Sequence[object]) -> list[str]:
+    names: list[str] = []
+    for value in values:
+        if isinstance(value, bytes):
+            names.append(value.decode("utf-8"))
+        else:
+            names.append(str(value))
+    return names
+
+
+def _build_joint_reorder(source_joint_names: Sequence[str], target_joint_names: Sequence[str]) -> list[int]:
+    name_to_index = {name: idx for idx, name in enumerate(source_joint_names)}
+    missing = [name for name in target_joint_names if name not in name_to_index]
+    if missing:
+        raise KeyError(f"Missing joint names while building reorder: {missing}")
+    return [name_to_index[name] for name in target_joint_names]
+
+
 class MotionLoader:
-    def __init__(self, motion_file: str, body_indexes: Sequence[int], device: str = "cpu"):
+    def __init__(
+        self,
+        motion_file: str,
+        body_indexes: Sequence[int],
+        robot_joint_names: Sequence[str],
+        device: str = "cpu",
+    ):
         assert os.path.isfile(motion_file), f"Invalid file path: {motion_file}"
         data = np.load(motion_file)
         self.fps = data["fps"]
-        self.joint_pos = torch.tensor(data["joint_pos"], dtype=torch.float32, device=device)
-        self.joint_vel = torch.tensor(data["joint_vel"], dtype=torch.float32, device=device)
+        joint_pos_np = np.asarray(data["joint_pos"], dtype=np.float32)
+        joint_vel_np = np.asarray(data["joint_vel"], dtype=np.float32)
+        robot_joint_names = _normalize_joint_names(robot_joint_names)
+        if "joint_names" in data.files:
+            motion_joint_names = _normalize_joint_names(np.asarray(data["joint_names"]).tolist())
+        elif joint_pos_np.shape[1] == len(MUJOCO_G1_JOINT_NAMES) == len(robot_joint_names):
+            # Historical MuJoCo motion files in this project are saved in MuJoCo qpos order.
+            motion_joint_names = list(MUJOCO_G1_JOINT_NAMES)
+        elif joint_pos_np.shape[1] == len(robot_joint_names):
+            motion_joint_names = list(robot_joint_names)
+        else:
+            raise ValueError(
+                f"Unable to infer motion joint order for file '{motion_file}'. "
+                f"motion_dim={joint_pos_np.shape[1]} robot_dim={len(robot_joint_names)}"
+            )
+        motion_to_robot = _build_joint_reorder(motion_joint_names, robot_joint_names)
+        joint_pos_np = joint_pos_np[:, motion_to_robot]
+        joint_vel_np = joint_vel_np[:, motion_to_robot]
+        self.joint_names = robot_joint_names
+        self.joint_pos = torch.tensor(joint_pos_np, dtype=torch.float32, device=device)
+        self.joint_vel = torch.tensor(joint_vel_np, dtype=torch.float32, device=device)
         self._body_pos_w = torch.tensor(data["body_pos_w"], dtype=torch.float32, device=device)
         self._body_quat_w = torch.tensor(data["body_quat_w"], dtype=torch.float32, device=device)
         self._body_lin_vel_w = torch.tensor(data["body_lin_vel_w"], dtype=torch.float32, device=device)
         self._body_ang_vel_w = torch.tensor(data["body_ang_vel_w"], dtype=torch.float32, device=device)
-        self._body_indexes = body_indexes
+        requested_indexes = torch.as_tensor(body_indexes, dtype=torch.long, device=device).view(-1)
+        motion_body_count = int(self._body_pos_w.shape[1])
+        out_of_bounds = bool(
+            requested_indexes.numel() > 0
+            and (
+                (requested_indexes.max().item() >= motion_body_count)
+                or (requested_indexes.min().item() < -motion_body_count)
+            )
+        )
+        if out_of_bounds:
+            # Some converted motion files store only the selected body set in the same
+            # order as cfg.body_names, not robot-global body indices.
+            if motion_body_count == int(requested_indexes.numel()):
+                self._body_indexes = torch.arange(motion_body_count, dtype=torch.long, device=device)
+            else:
+                raise IndexError(
+                    f"Motion body index out of bounds: requested range "
+                    f"[{requested_indexes.min().item()}, {requested_indexes.max().item()}], "
+                    f"motion body count={motion_body_count}, requested count={requested_indexes.numel()}."
+                )
+        else:
+            self._body_indexes = requested_indexes
         self.time_step_total = self.joint_pos.shape[0]
 
     @property
@@ -70,8 +167,14 @@ class MotionCommand(CommandTerm):
         self.body_indexes = torch.tensor(
             self.robot.find_bodies(self.cfg.body_names, preserve_order=True)[0], dtype=torch.long, device=self.device
         )
+        self.robot_joint_names = list(self.robot.data.joint_names)
 
-        self.motion = MotionLoader(self.cfg.motion_file, self.body_indexes, device=self.device)
+        self.motion = MotionLoader(
+            self.cfg.motion_file,
+            self.body_indexes,
+            robot_joint_names=self.robot_joint_names,
+            device=self.device,
+        )
         self.time_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.body_pos_relative_w = torch.zeros(self.num_envs, len(cfg.body_names), 3, device=self.device)
         self.body_quat_relative_w = torch.zeros(self.num_envs, len(cfg.body_names), 4, device=self.device)
