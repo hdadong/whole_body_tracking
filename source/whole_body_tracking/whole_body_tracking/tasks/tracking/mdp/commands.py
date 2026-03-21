@@ -38,7 +38,20 @@ class MotionLoader:
         self._body_quat_w = torch.tensor(data["body_quat_w"], dtype=torch.float32, device=device)
         self._body_lin_vel_w = torch.tensor(data["body_lin_vel_w"], dtype=torch.float32, device=device)
         self._body_ang_vel_w = torch.tensor(data["body_ang_vel_w"], dtype=torch.float32, device=device)
-        self._body_indexes = body_indexes
+        body_indexes = torch.tensor(body_indexes, dtype=torch.long, device=device)
+        motion_body_count = int(self._body_pos_w.shape[1])
+        if motion_body_count == int(body_indexes.numel()):
+            # Some motion files already store only the tracked body subset in the
+            # same order as cfg.body_names, so robot-body indices must not be
+            # applied again.
+            self._body_indexes = torch.arange(motion_body_count, dtype=torch.long, device=device)
+        elif int(body_indexes.max().item()) < motion_body_count:
+            self._body_indexes = body_indexes
+        else:
+            raise IndexError(
+                f"Motion body count {motion_body_count} is incompatible with requested body indexes "
+                f"(max index {int(body_indexes.max().item())}, count {int(body_indexes.numel())})."
+            )
         self.time_step_total = self.joint_pos.shape[0]
 
     @property

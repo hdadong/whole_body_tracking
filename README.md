@@ -23,10 +23,6 @@ train any sim-to-real-ready motion in the LAFAN1 dataset, without tuning any par
 For sim-to-sim and sim-to-real deployment, please refer to
 the [motion_tracking_controller](https://github.com/HybridRobotics/motion_tracking_controller).
 
-### Alternative Implementations
-
-- There is an alternative reproduction of BeyondMimic in [mjlab](https://github.com/mujocolab/mjlab), a new Isaac Lab-style manager API powered by MuJoCo-Warp for RL and robotics research. See the implementation [here](https://github.com/mujocolab/mjlab/blob/main/src/mjlab/tasks/tracking/tracking_env_cfg.py).
-
 ## Installation
 
 - Install Isaac Lab v2.1.0 by following
@@ -86,7 +82,7 @@ Note: The reference motion should be retargeted and use generalized coordinates 
   acceleration) via forward kinematics,
 
 ```bash
-python scripts/csv_to_npz.py --input_file {motion_name}.csv --input_fps 30 --output_name {motion_name} --headless
+python scripts/csv_to_npz.py --input_file /home/admin123/whole_body_tracking/LAFAN1_Retargeting_Dataset/g1/jumps1_subject2_cut.csv --input_fps 30 --output_name jumps1_subject2_cut --headless
 ```
 
 This will automatically upload the processed motion file to the WandB registry with output name {motion_name}.
@@ -94,7 +90,7 @@ This will automatically upload the processed motion file to the WandB registry w
 - Test if the WandB registry works properly by replaying the motion in Isaac Sim:
 
 ```bash
-python scripts/replay_npz.py --registry_name={your-organization}-org/wandb-registry-motions/{motion_name}
+python scripts/replay_npz.py --registry_name=weidonghuang98-org/wandb-registry-motions/jumps1_subject2_cut
 ```
 
 - Debugging
@@ -107,8 +103,8 @@ python scripts/replay_npz.py --registry_name={your-organization}-org/wandb-regis
 
 ```bash
 python scripts/rsl_rl/train.py --task=Tracking-Flat-G1-v0 \
---registry_name {your-organization}-org/wandb-registry-motions/{motion_name} \
---headless --logger wandb --log_project_name {project_name} --run_name {run_name}
+--registry_name weidonghuang98-org/wandb-registry-motions/jumps1_subject2_cut \
+--headless --logger wandb --log_project_name beyondmimic --run_name jumps1_subject2_cut
 ```
 
 ### Policy Evaluation
@@ -116,7 +112,7 @@ python scripts/rsl_rl/train.py --task=Tracking-Flat-G1-v0 \
 - Play the trained policy by the following command:
 
 ```bash
-python scripts/rsl_rl/play.py --task=Tracking-Flat-G1-v0 --num_envs=2 --wandb_path={wandb-run-path}
+python scripts/rsl_rl/play.py --task=Tracking-Flat-G1-v0 --num_envs=1 --wandb_path=weidonghuang98/beyondmimic/m5lme4vs
 ```
 
 The WandB run path can be located in the run overview. It follows the format {your_organization}/{project_name}/ along

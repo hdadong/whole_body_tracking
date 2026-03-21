@@ -16,7 +16,7 @@ from isaaclab.app import AppLauncher
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Replay converted motions.")
-parser.add_argument("--registry_name", type=str, required=True, help="The name of the wand registry.")
+#parser.add_argument("--registry_name", type=str, required=True, help="The name of the wand registry.")
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -67,16 +67,16 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Define simulation stepping
     sim_dt = sim.get_physics_dt()
 
-    registry_name = args_cli.registry_name
-    if ":" not in registry_name:  # Check if the registry name includes alias, if not, append ":latest"
-        registry_name += ":latest"
+    # registry_name = args_cli.registry_name
+    # if ":" not in registry_name:  # Check if the registry name includes alias, if not, append ":latest"
+    #     registry_name += ":latest"
     import pathlib
 
     import wandb
 
-    api = wandb.Api()
-    artifact = api.artifact(registry_name)
-    motion_file = str(pathlib.Path(artifact.download()) / "motion.npz")
+    #api = wandb.Api()
+    #artifact = api.artifact(registry_name)
+    motion_file = '/home/admin123/whole_body_tracking/motion.npz' #str(pathlib.Path(artifact.download()) / "motion.npz")
 
     motion = MotionLoader(
         motion_file,
@@ -96,9 +96,63 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         root_states[:, 3:7] = motion.body_quat_w[time_steps][:, 0]
         root_states[:, 7:10] = motion.body_lin_vel_w[time_steps][:, 0]
         root_states[:, 10:] = motion.body_ang_vel_w[time_steps][:, 0]
-
+        # self.robot_anchor_body_index = self.robot.body_names.index(self.cfg.anchor_body_name)
+        # self.motion_anchor_body_index = self.cfg.body_names.index(self.cfg.anchor_body_name)
+        # self.body_indexes = torch.tensor(
+        #     self.robot.find_bodies(self.cfg.body_names, preserve_order=True)[0], dtype=torch.long, device=self.device
+        # )
+        body_names = [
+            "pelvis",
+            "left_hip_roll_link",
+            "left_knee_link",
+            "left_ankle_roll_link",
+            "right_hip_roll_link",
+            "right_knee_link",
+            "right_ankle_roll_link",
+            "torso_link",
+            "left_shoulder_roll_link",
+            "left_elbow_link",
+            "left_wrist_yaw_link",
+            "right_shoulder_roll_link",
+            "right_elbow_link",
+            "right_wrist_yaw_link",
+        ]
+        print(robot.find_bodies(body_names, preserve_order=True)[0])
+        joint_names = [
+            "left_hip_pitch_joint",
+            "left_hip_roll_joint",
+            "left_hip_yaw_joint",
+            "left_knee_joint",
+            "left_ankle_pitch_joint",
+            "left_ankle_roll_joint",
+            "right_hip_pitch_joint",
+            "right_hip_roll_joint",
+            "right_hip_yaw_joint",
+            "right_knee_joint",
+            "right_ankle_pitch_joint",
+            "right_ankle_roll_joint",
+            "waist_yaw_joint",
+            "waist_roll_joint",
+            "waist_pitch_joint",
+            "left_shoulder_pitch_joint",
+            "left_shoulder_roll_joint",
+            "left_shoulder_yaw_joint",
+            "left_elbow_joint",
+            "left_wrist_roll_joint",
+            "left_wrist_pitch_joint",
+            "left_wrist_yaw_joint",
+            "right_shoulder_pitch_joint",
+            "right_shoulder_roll_joint",
+            "right_shoulder_yaw_joint",
+            "right_elbow_joint",
+            "right_wrist_roll_joint",
+            "right_wrist_pitch_joint",
+            "right_wrist_yaw_joint",
+        ]
+        print(robot.find_joints(joint_names, preserve_order=True)[0])
         robot.write_root_state_to_sim(root_states)
         robot.write_joint_state_to_sim(motion.joint_pos[time_steps], motion.joint_vel[time_steps])
+        
         scene.write_data_to_sim()
         sim.render()  # We don't want physic (sim.step())
         scene.update(sim_dt)
