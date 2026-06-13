@@ -334,7 +334,13 @@ class MotionCommand(CommandTerm):
             / self.bin_count
             * (self.motion.time_step_total - 1)
         ).long()
-        self.time_steps[env_ids] = (sampled_bins / self.bin_count * (self.motion.time_step_total - 1)).long()
+
+        # LIFT: force a fixed start frame for controlled data-collection
+        # comparison (e.g. vs the holosoma collector). LIFT_WBT_START_FRAME=0
+        # makes every reset begin at motion frame 0 instead of adaptive sampling.
+        _fixed_start = os.environ.get("LIFT_WBT_START_FRAME")
+        if _fixed_start is not None and len(env_ids) > 0:
+            self.time_steps[env_ids] = int(_fixed_start)
 
         # Metrics
         H = -(sampling_probabilities * (sampling_probabilities + 1e-12).log()).sum()
