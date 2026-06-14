@@ -336,6 +336,12 @@ class MotionCommand(CommandTerm):
         ).long()
         self.time_steps[env_ids] = (sampled_bins / self.bin_count * (self.motion.time_step_total - 1)).long()
 
+        # Optionally force a fixed start frame, disabling adaptive sampling.
+        # cfg.start_frame is None -> keep adaptive sampling (default);
+        # an integer (e.g. 0) -> every reset begins at that motion frame.
+        if self.cfg.start_frame is not None:
+            self.time_steps[env_ids] = max(0, min(int(self.cfg.start_frame), self.motion.time_step_total - 1))
+
         # Metrics
         H = -(sampling_probabilities * (sampling_probabilities + 1e-12).log()).sum()
         H_norm = H / math.log(self.bin_count)
@@ -473,6 +479,14 @@ class MotionCommandCfg(CommandTermCfg):
     adaptive_lambda: float = 0.8
     adaptive_uniform_ratio: float = 0.1
     adaptive_alpha: float = 0.001
+
+    start_frame: int | None = None
+    """Fixed motion start frame for every reset.
+
+    ``None`` (default) keeps adaptive sampling. An integer (e.g. ``0``) forces every episode to
+    start at that motion frame, disabling adaptive sampling. Override from the CLI via Hydra, e.g.
+    ``env.commands.motion.start_frame=0``.
+    """
 
     anchor_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/pose")
     anchor_visualizer_cfg.markers["frame"].scale = (0.2, 0.2, 0.2)
