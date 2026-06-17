@@ -56,3 +56,12 @@ def bad_motion_body_pos_z_only(
     body_indexes = _get_body_indexes(command, body_names)
     error = torch.abs(command.body_pos_relative_w[:, body_indexes, -1] - command.robot_body_pos_w[:, body_indexes, -1])
     return torch.any(error > threshold, dim=-1)
+
+
+def motion_reached_end(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:
+    """Terminate when the motion clip reaches its last frame (matches the brax
+    GPU0-4 done: ``ref_index >= time_step_total - 1``). Checked before the command
+    manager advances/wraps time_steps (termination runs before command.compute),
+    so it fires on the final frame instead of letting the MotionCommand loop."""
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    return command.time_steps >= (command.motion.time_step_total - 1)
