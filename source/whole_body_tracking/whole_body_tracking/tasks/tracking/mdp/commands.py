@@ -196,9 +196,20 @@ class MotionCommand(CommandTerm):
         self.metrics["error_body_rot"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["error_joint_pos"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["error_joint_vel"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["error_body_lin_vel"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["error_body_ang_vel"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["sampling_entropy"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["sampling_top1_prob"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["sampling_top1_bin"] = torch.zeros(self.num_envs, device=self.device)
+
+        # ---- LIFT held-out eval support (no effect during training) ----
+        # When ``eval_mode`` is True, ``motion_reached_end`` never fires, so an
+        # episode that reaches the clip end loops via adaptive resample instead of
+        # terminating (matches the eval spec). ``_eval_force_frames[env] >= 0``
+        # forces that env's NEXT reset to begin at the given motion frame (consumed
+        # once), so 50 eval envs can each start on a different frame.
+        self.eval_mode = False
+        self._eval_force_frames = torch.full((self.num_envs,), -1, dtype=torch.long, device=self.device)
 
     @property
     def command(self) -> torch.Tensor:  # TODO Consider again if this is the best observation
@@ -341,6 +352,18 @@ class MotionCommand(CommandTerm):
         # an integer (e.g. 0) -> every reset begins at that motion frame.
         if self.cfg.start_frame is not None:
             self.time_steps[env_ids] = max(0, min(int(self.cfg.start_frame), self.motion.time_step_total - 1))
+
+        # Eval: override with per-env forced start frames (consumed once), so each
+        # eval env can begin on a distinct motion frame. Subsequent motion-end
+        # resamples fall back to adaptive sampling (forced value reset to -1).
+        env_ids_t = torch.as_tensor(env_ids, dtype=torch.long, device=self.device).view(-1)
+        if env_ids_t.numel() > 0:
+            forced = self._eval_force_frames[env_ids_t]
+            forced_mask = forced >= 0
+            if torch.any(forced_mask):
+                sel = env_ids_t[forced_mask]
+                self.time_steps[sel] = forced[forced_mask].clamp(0, self.motion.time_step_total - 1)
+                self._eval_force_frames[sel] = -1
 
         # Metrics
         H = -(sampling_probabilities * (sampling_probabilities + 1e-12).log()).sum()

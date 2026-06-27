@@ -6,7 +6,8 @@
 #   * env reward/physics matched to the GPU0-5 SAC (undesired_contacts OFF),
 #   * NO domain randomization, adaptive motion sampling ON, terminations default,
 #   * num_envs=1000, num_steps_per_env=20, save_interval=50,
-#   * logs Metrics/avg_total_reward + Metrics/avg_episode_length per 1000 steps.
+#   * logs the unified held-out eval/* metrics (50-env, see lift_eval.py) to the
+#     shared fight1_baselines wandb project, plus secondary windowed Metrics/*.
 set -euo pipefail
 
 GPU=${GPU:-6}
@@ -16,7 +17,7 @@ WBT_DIR=/home/weidong/whole_body_tracking
 ISAACLAB_LOCAL=/home/weidong/IsaacLab_localcopy
 MOTION=${MOTION:-/home/weidong/LIFT3_wt_wm_cem/tracking_motion/motion_fight1_subject2_cut2_mujoco.npz}
 MOTION_DIR=$(dirname "${MOTION}")
-WANDB_PROJECT=${WANDB_PROJECT:-fight1_ppo_lift_match}
+WANDB_PROJECT=${WANDB_PROJECT:-fight1_baselines}
 WANDB_API_KEY=${WANDB_API_KEY:-ce601da9131d4839740cb8da8c4f34aaa2e74ee8}
 MAX_ITER=${MAX_ITER:-30000}
 NUM_ENVS=${NUM_ENVS:-1000}
@@ -61,7 +62,7 @@ docker run -d --name "${CONT}" \
       --window_steps 1000 \
       --headless --device cuda:0 \
       --logger wandb --log_project_name ${WANDB_PROJECT} \
-      --run_name ${EXP_TAG}_s${SEED} \
+      --run_name fight1_ppo_s${SEED} \
       > ${RUN_DIR}/train.log 2>&1
   "
 echo "[ppo] container ${CONT} started"

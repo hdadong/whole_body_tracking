@@ -104,7 +104,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # ---- LIFT3-matched PPO knobs (user spec) ----
     agent_cfg.num_steps_per_env = 20
-    agent_cfg.save_interval = 50
+    # Policy saving DISABLED (huge interval): the held-out eval runs in-process on
+    # the live policy, so no disk checkpoints are needed (frees disk).
+    agent_cfg.save_interval = 100000000
     if not agent_cfg.experiment_name:
         agent_cfg.experiment_name = "g1_flat"
     agent_cfg.experiment_name = agent_cfg.experiment_name + "_lift_match"

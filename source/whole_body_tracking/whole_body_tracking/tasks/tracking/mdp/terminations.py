@@ -62,6 +62,13 @@ def motion_reached_end(env: ManagerBasedRLEnv, command_name: str) -> torch.Tenso
     """Terminate when the motion clip reaches its last frame (matches the brax
     GPU0-4 done: ``ref_index >= time_step_total - 1``). Checked before the command
     manager advances/wraps time_steps (termination runs before command.compute),
-    so it fires on the final frame instead of letting the MotionCommand loop."""
+    so it fires on the final frame instead of letting the MotionCommand loop.
+
+    During the LIFT held-out eval (``command.eval_mode``) this never fires, so a
+    clip that reaches its end loops via adaptive resample WITHOUT counting as a
+    ``done`` (matches the eval spec)."""
     command: MotionCommand = env.command_manager.get_term(command_name)
-    return command.time_steps >= (command.motion.time_step_total - 1)
+    reached = command.time_steps >= (command.motion.time_step_total - 1)
+    if getattr(command, "eval_mode", False):
+        return torch.zeros_like(reached)
+    return reached

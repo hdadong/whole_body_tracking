@@ -118,6 +118,52 @@ python scripts/rsl_rl/play.py --task=Tracking-Flat-G1-v0 --num_envs=2 --wandb_pa
 The WandB run path can be located in the run overview. It follows the format {your_organization}/{project_name}/ along
 with a unique 8-character identifier. Note that run_name is different from run_path.
 
+## LIFT3 Tracking Baselines (PPO & FastSAC on IsaacLab)
+
+This branch (`fight1_ppo_lift_match`) adds two reward/physics-matched motion-tracking baselines used in the LIFT3
+paper. Both train on the **same** IsaacLab G1 29-DoF tracking environment (identical motion / physics / reset /
+termination / reward / held-out eval), so the only difference is the **algorithm**:
+
+- **PPO** (on-policy, rsl_rl): `scripts/rsl_rl/train_lift_match.py`, launcher `scripts/rsl_rl/run_lift_match_ppo.sh`.
+- **FastSAC** (off-policy distributional SAC ported from holosoma — C51 distributional critic + Q-ensemble + UTD +
+  obs normalization + alpha autotune): `scripts/rsl_rl/train_sac_match.py`, launcher
+  `scripts/rsl_rl/run_lift_match_sac.sh`. Networks/buffer in `fast_sac_net.py` / `fast_sac_buffer.py`, training loop in
+  `lift_sac_runner.py`.
+
+Both log a unified 50-env held-out eval (`eval/*`, see `scripts/rsl_rl/lift_eval.py`) to a shared wandb project for
+direct comparison. Env settings are matched to the LIFT3 brax SAC: `undesired_contacts` reward off, anchor_pos
+threshold 0.35, a `motion_end` termination added, domain randomization off, adaptive motion sampling on,
+`num_envs=1000`.
+
+### Requirements
+
+- A docker image `lift3:bm-wbt` built from `nvcr.io/nvidia/isaac-lab:2.1.0` (IsaacSim 4.5 + IsaacLab 2.1 + rsl_rl).
+- A local motion `.npz` in mujoco/brax format (e.g. `motion_fight1_subject2_cut2_mujoco.npz`).
+- The launchers assume the repo is at `/home/weidong/whole_body_tracking` and IsaacLab at
+  `/home/weidong/IsaacLab_localcopy`; adjust the `WBT_DIR` / `ISAACLAB_LOCAL` vars in the launchers for your paths.
+
+### Run the PPO baseline
+
+```bash
+GPU=6 SEED=1 EXP_TAG=fight1_ppo_lift_match \
+  MOTION=/path/to/motion_fight1_subject2_cut2_mujoco.npz \
+  bash scripts/rsl_rl/run_lift_match_ppo.sh
+```
+
+### Run the FastSAC baseline
+
+```bash
+GPU=5 SEED=1 EXP_TAG=fight1_fastsac_isaaclab \
+  MOTION=/path/to/motion_fight1_subject2_cut2_mujoco.npz \
+  bash scripts/rsl_rl/run_lift_match_sac.sh
+```
+
+Each launcher starts a detached docker container, redirects logs to
+`{ppo,sac}_lift_match_runs/<timestamp>-<EXP_TAG>/train.log`, and logs to wandb project `fight1_baselines` (override
+with `WANDB_PROJECT` / `WANDB_API_KEY`). The held-out eval reports `eval/avg_episode_length`,
+`eval/avg_total_reward`, per-reward-term and per-tracking-error metrics, all under the shared `eval/*` schema so the
+PPO and FastSAC curves line up directly.
+
 ## Code Structure
 
 Below is an overview of the code structure for this repository:
