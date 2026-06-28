@@ -108,10 +108,15 @@ def run_isaaclab_eval(
     finished = torch.zeros(n_eval, dtype=torch.bool, device=device)
 
     LIFT_EVAL_MAX_EP = 500
+    # bad-tracking failure cfgs, recomputed AFTER env.step on the refreshed poses below.
+    term_mgr = unwrapped.termination_manager
+    fail_cfgs = [term_mgr.get_term_cfg(nm) for nm in ("anchor_pos", "anchor_ori", "ee_body_pos")]
     with torch.inference_mode():
-        # eval_mode=True -> motion_reached_end returns zeros, so the clip end loops
-        # via adaptive resample instead of terminating. done = a real bad-tracking
-        # failure (anchor/ee); the 500-step cap is the eval time-out horizon.
+        # eval_mode=True -> motion_reached_end AND the 3 bad-tracking terms return zeros
+        # in-env, so the clip end loops via adaptive resample and the env NEVER auto-resets
+        # on a reset-step stale pose. We judge failure ourselves AFTER env.step using the
+        # refreshed body_pos_relative_w (matches the LIFT brax-flags eval -> no ep_len=1).
+        # The 500-step cap is the eval time-out horizon.
         command.eval_mode = True
         command._eval_force_frames[:] = -1
         command._eval_force_frames[eval_ids] = frames
@@ -123,7 +128,15 @@ def run_isaaclab_eval(
         for _ in range(int(LIFT_EVAL_MAX_EP)):
             actions = act_fn(obs)
             obs, rew, dones, _ = env.step(actions)
-            done = dones[:n_eval].to(device) > 0  # bad_tracking (motion_end suppressed)
+            # Recompute bad-tracking failure on the post-step refreshed poses
+            # (un-suppress -> compute -> re-suppress). KEY alignment with LIFT: avoids the
+            # reset-step stale-pose false failure that made PPO's ep_len_min=1.
+            command.eval_mode = False
+            done_full = torch.zeros(n_total, dtype=torch.bool, device=device)
+            for cfg in fail_cfgs:
+                done_full = done_full | cfg.func(unwrapped, **cfg.params).to(device)
+            command.eval_mode = True
+            done = done_full[:n_eval] > 0  # bad_tracking, judged with refreshed poses
             live = ~finished
             live_nr = live & (~done)  # exclude the done/reset step from reward+errors
             livef = live.float()

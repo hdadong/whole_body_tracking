@@ -22,7 +22,14 @@ def bad_anchor_pos(env: ManagerBasedRLEnv, command_name: str, threshold: float) 
 
 def bad_anchor_pos_z_only(env: ManagerBasedRLEnv, command_name: str, threshold: float) -> torch.Tensor:
     command: MotionCommand = env.command_manager.get_term(command_name)
-    return torch.abs(command.anchor_pos_w[:, -1] - command.robot_anchor_pos_w[:, -1]) > threshold
+    out = torch.abs(command.anchor_pos_w[:, -1] - command.robot_anchor_pos_w[:, -1]) > threshold
+    # Suppressed during the held-out eval (eval_mode): the eval judges failure itself
+    # AFTER env.step using the refreshed body/anchor poses (matching the LIFT brax-flags
+    # eval), so the env must NOT auto-reset on the reset-step stale pose (which would
+    # spuriously fail step 1 -> ep_len=1). Training (eval_mode=False) is unaffected.
+    if getattr(command, "eval_mode", False):
+        return torch.zeros_like(out)
+    return out
 
 
 def bad_anchor_ori(
@@ -35,7 +42,10 @@ def bad_anchor_ori(
 
     robot_projected_gravity_b = math_utils.quat_rotate_inverse(command.robot_anchor_quat_w, asset.data.GRAVITY_VEC_W)
 
-    return (motion_projected_gravity_b[:, 2] - robot_projected_gravity_b[:, 2]).abs() > threshold
+    out = (motion_projected_gravity_b[:, 2] - robot_projected_gravity_b[:, 2]).abs() > threshold
+    if getattr(command, "eval_mode", False):  # suppressed during eval (see bad_anchor_pos_z_only)
+        return torch.zeros_like(out)
+    return out
 
 
 def bad_motion_body_pos(
@@ -55,7 +65,10 @@ def bad_motion_body_pos_z_only(
 
     body_indexes = _get_body_indexes(command, body_names)
     error = torch.abs(command.body_pos_relative_w[:, body_indexes, -1] - command.robot_body_pos_w[:, body_indexes, -1])
-    return torch.any(error > threshold, dim=-1)
+    out = torch.any(error > threshold, dim=-1)
+    if getattr(command, "eval_mode", False):  # suppressed during eval (see bad_anchor_pos_z_only)
+        return torch.zeros_like(out)
+    return out
 
 
 def motion_reached_end(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:

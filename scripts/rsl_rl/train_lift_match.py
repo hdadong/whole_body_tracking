@@ -151,8 +151,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # / z-only ee_body_pos (0.25, 4 EE); fix anchor_pos threshold and add the
     # missing motion-end termination (otherwise PPO loops the clip).
     env_cfg.terminations.anchor_pos.params["threshold"] = 0.35
+    # motion_end as TIMEOUT (time_out=True) -> truncated (bootstrap=1): reaching the
+    # clip end is a time-out, NOT a failure, so PPO should bootstrap the clip-end value
+    # instead of treating it as terminated (bootstrap=0, which undervalues late states).
+    # Aligns with the FastSAC baseline (train_sac_match.py) so the only PPO-vs-SAC
+    # difference is the algorithm + each policy head's action parametrization.
     env_cfg.terminations.motion_end = DoneTerm(
-        func=mdp.motion_reached_end, params={"command_name": "motion"}
+        func=mdp.motion_reached_end, params={"command_name": "motion"}, time_out=True
     )
 
     # ---- Motion from a local npz path (mirror the bm_wbt collector; no registry).
@@ -166,6 +171,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print(f"[INFO] num_envs={env_cfg.scene.num_envs} num_steps_per_env={agent_cfg.num_steps_per_env} "
           f"save_interval={agent_cfg.save_interval} window_steps={args_cli.window_steps}")
     print("[INFO] undesired_contacts=OFF | domain_randomization=OFF | adaptive_sampling=ON | terminations=default")
+
+    # ---- entropy_coef override (env var PPO_ENTROPY_COEF) ----
+    # BeyondMimic's default entropy_coef=0.005 relies on DR + obs noise for exploration.
+    # With DR/noise OFF (LIFT-match), PPO's action noise std collapses 1.0 -> 0.05 and the
+    # policy degrades after ~40M env-steps. Raising entropy_coef keeps exploration alive.
+    _ent = os.environ.get("PPO_ENTROPY_COEF", "").strip()
+    if _ent:
+        agent_cfg.algorithm.entropy_coef = float(_ent)
+        print(f"[INFO] entropy_coef override -> {agent_cfg.algorithm.entropy_coef}")
 
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)

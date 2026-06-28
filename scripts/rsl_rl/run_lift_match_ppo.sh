@@ -21,6 +21,7 @@ WANDB_PROJECT=${WANDB_PROJECT:-fight1_baselines}
 WANDB_API_KEY=${WANDB_API_KEY:-ce601da9131d4839740cb8da8c4f34aaa2e74ee8}
 MAX_ITER=${MAX_ITER:-30000}
 NUM_ENVS=${NUM_ENVS:-1000}
+PPO_ENTROPY_COEF=${PPO_ENTROPY_COEF:-}
 
 TS=$(date +%Y%m%d-%H%M%S)
 RUN_DIR=${WBT_DIR}/ppo_lift_match_runs/${TS}-${EXP_TAG}
@@ -40,6 +41,7 @@ docker run -d --name "${CONT}" \
   --shm-size=16g --ulimit memlock=-1 --ulimit stack=67108864 \
   -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e OMNI_KIT_ACCEPT_EULA=1 \
   -e NVIDIA_DRIVER_CAPABILITIES=all -e PYTHONUNBUFFERED=1 \
+  -e PPO_ENTROPY_COEF=${PPO_ENTROPY_COEF} \
   -e ISAACLAB_PATH=${ISAACLAB_LOCAL} \
   -e PYTHONPATH=${WBT_DIR}/source/whole_body_tracking \
   -e WANDB_API_KEY=${WANDB_API_KEY} \
@@ -62,7 +64,7 @@ docker run -d --name "${CONT}" \
       --window_steps 1000 \
       --headless --device cuda:0 \
       --logger wandb --log_project_name ${WANDB_PROJECT} \
-      --run_name fight1_ppo_s${SEED} \
+      --run_name ${EXP_TAG}_s${SEED} \
       > ${RUN_DIR}/train.log 2>&1
   "
 echo "[ppo] container ${CONT} started"

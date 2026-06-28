@@ -132,8 +132,15 @@ termination / reward / held-out eval), so the only difference is the **algorithm
 
 Both log a unified 50-env held-out eval (`eval/*`, see `scripts/rsl_rl/lift_eval.py`) to a shared wandb project for
 direct comparison. Env settings are matched to the LIFT3 brax SAC: `undesired_contacts` reward off, anchor_pos
-threshold 0.35, a `motion_end` termination added, domain randomization off, adaptive motion sampling on,
-`num_envs=1000`.
+threshold 0.35, a `motion_end` termination added **as a time-out** (`time_out=True` → `truncated`/bootstrap, since
+reaching the clip end is not a failure), domain randomization off, observation noise off, adaptive motion sampling on,
+`num_envs=1000`. The held-out eval suppresses the in-env bad-tracking terminations (`eval_mode`) and judges failure
+**post-step on the refreshed poses**, so reset-step stale poses don't cause spurious step-1 failures (`ep_len=1`) —
+aligned with the LIFT bm_wbt SAC eval.
+
+> **PPO requires `PPO_ENTROPY_COEF=0.02`** (see "Run the PPO baseline"). Because DR + obs noise are OFF here,
+> BeyondMimic's stock `entropy_coef=0.005` is too small → PPO's action-noise std collapses 1.0 → 0.05 and the policy
+> degrades after ~40M env-steps. At 0.02 it stays stable and matches FastSAC.
 
 ### Requirements
 
@@ -144,8 +151,15 @@ threshold 0.35, a `motion_end` termination added, domain randomization off, adap
 
 ### Run the PPO baseline
 
+**`PPO_ENTROPY_COEF=0.02` is the paper default and is required for this LIFT-matched env.** BeyondMimic's stock
+`entropy_coef=0.005` relies on domain randomization + observation noise for exploration; both are OFF here (to match
+the LIFT brax SAC), so at 0.005 PPO's action-noise std collapses 1.0 → 0.05 around 40M env-steps and the policy
+degrades (reward/ep_len fall and never recover). At **0.02** the std holds (~0.2–0.65), PPO trains stably and reaches
+reward ~40 / ep ~480 — on par with FastSAC. (0.01 also converges; 0.05 over-explores and fails to converge.)
+
 ```bash
 GPU=6 SEED=1 EXP_TAG=fight1_ppo_lift_match \
+  PPO_ENTROPY_COEF=0.02 \
   MOTION=/path/to/motion_fight1_subject2_cut2_mujoco.npz \
   bash scripts/rsl_rl/run_lift_match_ppo.sh
 ```
